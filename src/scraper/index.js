@@ -52,8 +52,7 @@ async function scrapeSport(browser, sport) {
 
     const venueResponse = venueCapture.results[0]
     if (!venueResponse) {
-      console.warn(`[${sport.name}] No venue list response captured`)
-      return
+      throw new Error(`[${sport.name}] No venue list response captured`)
     }
     const venues = venueResponse.result.data.json
     console.log(`[${sport.name}] ${venues.length} venue(s) — fetching schedules in parallel`)

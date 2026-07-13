@@ -10,12 +10,17 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false)
 
   const fetchData = useCallback(async () => {
-    const [slotsRes, statusRes] = await Promise.all([
-      fetch('/api/slots'),
-      fetch('/api/status'),
-    ])
-    setSlots(await slotsRes.json())
-    setStatus(await statusRes.json())
+    try {
+      const [slotsRes, statusRes] = await Promise.all([
+        fetch('/api/slots'),
+        fetch('/api/status'),
+      ])
+      setSlots(await slotsRes.json())
+      setStatus(await statusRes.json())
+    } catch (err) {
+      console.error('Failed to fetch data:', err)
+      setStatus(prev => ({ ...prev, success: false }))
+    }
   }, [])
 
   useEffect(() => {
