@@ -18,11 +18,15 @@ const distPath = path.join(__dirname, '../../dist')
 app.use(express.static(distPath))
 app.get('*', (_req, res) => res.sendFile(path.join(distPath, 'index.html')))
 
-cron.schedule('*/10 * * * *', () => {
-  runScraper().catch(err => console.error('Scheduled scrape failed:', err.message))
-})
+if (!process.env.DISABLE_SCRAPER) {
+  cron.schedule('*/10 * * * *', () => {
+    runScraper().catch(err => console.error('Scheduled scrape failed:', err.message))
+  })
+}
 
 app.listen(PORT, () => {
   console.log(`Listening on port ${PORT}`)
-  runScraper().catch(err => console.error('Initial scrape failed:', err.message))
+  if (!process.env.DISABLE_SCRAPER) {
+    runScraper().catch(err => console.error('Initial scrape failed:', err.message))
+  }
 })

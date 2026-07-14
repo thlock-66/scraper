@@ -40,7 +40,6 @@ async function captureResponse(page, urlSubstring) {
 
 async function scrapeSport(browser, sport) {
   const page = await browser.newPage()
-  const db = getDb()
   const next7 = getNext7Dates()
 
   try {
@@ -113,14 +112,16 @@ async function scrapeSport(browser, sport) {
       }
     }
 
-    // Upsert once per date (all venues combined) — prevents overwrite bug
+    // Return slot data grouped by date — caller handles DB write or remote POST
+    const results = []
     for (const date of next7) {
       const dayType = isWeekend(date) ? 'weekend' : 'weekday'
       const slots = allSlotsByDate[date] || []
       const filtered = filterSlots(slots, date)
-      upsertSlots(db, sport.id, date, dayType, filtered)
+      results.push({ sport: sport.id, date, dayType, slots: filtered })
       console.log(`  [${sport.name}] ${date}: ${filtered.length} slot(s)`)
     }
+    return results
   } finally {
     await page.close()
   }
@@ -134,19 +135,43 @@ export async function runScraper() {
     return
   }
   _scraperRunning = true
-  const db = getDb()
   const startedAt = new Date().toISOString()
   const browser = await chromium.launch({ headless: true })
   try {
+    const allResults = []
     for (const sport of SPORTS) {
       console.log(`Scraping ${sport.name}...`)
-      await scrapeSport(browser, sport)
+      const results = await scrapeSport(browser, sport)
+      allResults.push(...results)
     }
-    updateScrapeStatus(db, true, startedAt)
-    console.log('Scrape complete')
+
+    if (process.env.RAILWAY_URL) {
+      // Remote mode: POST results to Railway dashboard
+      const res = await fetch(`${process.env.RAILWAY_URL}/api/slots`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.SCRAPER_API_KEY || ''}`,
+        },
+        body: JSON.stringify(allResults),
+      })
+      if (!res.ok) throw new Error(`Remote API responded ${res.status}`)
+      console.log('Scrape complete — data posted to Railway')
+    } else {
+      // Local mode: write directly to SQLite
+      const db = getDb()
+      for (const { sport, date, dayType, slots } of allResults) {
+        upsertSlots(db, sport, date, dayType, slots)
+      }
+      updateScrapeStatus(db, true, startedAt)
+      console.log('Scrape complete')
+    }
   } catch (err) {
     console.error('Scrape error:', err.message)
-    updateScrapeStatus(db, false, startedAt)
+    if (!process.env.RAILWAY_URL) {
+      const db = getDb()
+      updateScrapeStatus(db, false, startedAt)
+    }
     throw err
   } finally {
     await browser.close()
